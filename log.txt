@@ -1,0 +1,43 @@
+time,mode,looking,gesture,obs,P_HighFocus,P_TaskTransition,P_AwaitingHandover,robot_position,robot_says
+0.60,proactive,yes,none,2,0.370,0.587,0.043,STAGING_AREA,Advancing to staging threshold
+1.13,proactive,yes,none,2,0.085,0.846,0.069,STAGING_AREA,Standing by at staging threshold
+1.66,proactive,yes,none,2,0.034,0.891,0.075,STAGING_AREA,Standing by at staging threshold
+2.20,proactive,yes,none,2,0.027,0.896,0.077,STAGING_AREA,Standing by at staging threshold
+2.75,proactive,yes,none,2,0.026,0.897,0.077,STAGING_AREA,Standing by at staging threshold
+3.29,proactive,yes,none,2,0.026,0.897,0.077,STAGING_AREA,Standing by at staging threshold
+3.79,proactive,yes,reach,3,0.016,0.303,0.682,AT_NURSE,Advancing to nurse for handover
+4.32,proactive,yes,reach,3,0.006,0.070,0.925,AT_NURSE,Executing handover: transferring supplies
+4.83,proactive,yes,none,2,0.031,0.469,0.501,AT_NURSE,Handing over supplies to nurse
+5.34,proactive,yes,none,2,0.030,0.738,0.232,STAGING_AREA,Aborting: backing off to staging
+5.86,proactive,yes,none,2,0.028,0.848,0.125,STAGING_AREA,Standing by at staging threshold
+6.39,proactive,yes,none,2,0.027,0.882,0.091,STAGING_AREA,Standing by at staging threshold
+6.92,proactive,yes,none,2,0.026,0.893,0.081,STAGING_AREA,Standing by at staging threshold
+7.43,proactive,yes,none,2,0.026,0.896,0.078,STAGING_AREA,Standing by at staging threshold
+7.96,proactive,yes,none,2,0.026,0.897,0.077,STAGING_AREA,Standing by at staging threshold
+8.48,proactive,yes,none,2,0.026,0.897,0.077,STAGING_AREA,Standing by at staging threshold
+9.01,proactive,yes,reach,3,0.015,0.303,0.682,AT_NURSE,Advancing to nurse for handover
+9.54,proactive,yes,reach,3,0.006,0.070,0.925,AT_NURSE,Executing handover: transferring supplies
+10.06,proactive,yes,none,2,0.031,0.469,0.501,AT_NURSE,Handing over supplies to nurse
+10.60,proactive,yes,none,2,0.030,0.738,0.232,STAGING_AREA,Aborting: backing off to staging
+11.14,proactive,yes,none,2,0.028,0.848,0.125,STAGING_AREA,Standing by at staging threshold
+11.65,proactive,yes,none,2,0.027,0.882,0.091,STAGING_AREA,Standing by at staging threshold
+12.19,proactive,yes,none,2,0.026,0.893,0.081,STAGING_AREA,Standing by at staging threshold
+12.73,proactive,yes,none,2,0.026,0.896,0.078,STAGING_AREA,Standing by at staging threshold
+13.24,proactive,yes,reach,3,0.015,0.302,0.682,AT_NURSE,Advancing to nurse for handover
+13.79,proactive,yes,reach,3,0.006,0.070,0.925,AT_NURSE,Executing handover: transferring supplies
+14.32,proactive,yes,reach,3,0.004,0.034,0.962,AT_NURSE,Handing over supplies to nurse
+14.83,proactive,yes,reach,3,0.004,0.030,0.966,AT_NURSE,Handing over supplies to nurse
+15.35,proactive,yes,reach,3,0.004,0.029,0.967,STAGING_AREA,Handover complete! Backing off to staging
+15.90,proactive,yes,reach,3,0.004,0.029,0.967,STAGING_AREA,Item delivered! Standing by at staging threshold
+16.44,proactive,yes,none,2,0.031,0.430,0.540,STAGING_AREA,Item delivered! Standing by at staging threshold
+16.98,proactive,yes,none,2,0.031,0.719,0.250,STAGING_AREA,Item delivered! Standing by at staging threshold
+17.50,proactive,yes,none,2,0.028,0.841,0.131,STAGING_AREA,Item delivered! Standing by at staging threshold
+18.03,proactive,yes,none,2,0.027,0.881,0.093,STAGING_AREA,Item delivered! Standing by at staging threshold
+18.58,proactive,yes,none,2,0.026,0.892,0.081,STAGING_AREA,Item delivered! Standing by at staging threshold
+19.13,proactive,yes,none,2,0.026,0.896,0.078,STAGING_AREA,Item delivered! Standing by at staging threshold
+19.64,proactive,yes,none,2,0.026,0.897,0.077,STAGING_AREA,Item delivered! Standing by at staging threshold
+20.16,proactive,yes,none,2,0.026,0.897,0.077,STAGING_AREA,Item delivered! Standing by at staging threshold
+20.69,proactive,yes,none,2,0.026,0.897,0.077,STAGING_AREA,Item delivered! Standing by at staging threshold
+21.20,proactive,yes,none,2,0.026,0.897,0.077,STAGING_AREA,Item delivered! Standing by at staging threshold
+21.71,proactive,yes,none,2,0.026,0.897,0.077,STAGING_AREA,Item delivered! Standing by at staging threshold
+22.24,proactive,yes,none,2,0.026,0.897,0.077,STAGING_AREA,Item delivered! Standing by at staging threshold

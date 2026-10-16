@@ -1,8 +1,12 @@
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="google.protobuf")
+
 import cv2
 import numpy as np
 import mediapipe.python.solutions.face_mesh as mp_face_mesh
 import mediapipe.python.solutions.hands as mp_hands
 import mediapipe.python.solutions.drawing_utils as mp_drawing
+from brain import RobotNurseBrain
 
 # ==========================================
 # 1. 2D GRID ENVIRONMENT
@@ -119,74 +123,6 @@ def estimate_hand_gesture(landmarks):
     return "HAND_IDLE"
 
 
-# ==========================================
-# 3. DECISION ENGINE (THINK LAYER)
-# ==========================================
-class RobotNurseBrain:
-    def __init__(self):
-        # States: IDLE_BAY -> STAGING_AREA -> AT_NURSE
-        self.state = "IDLE_BAY"
-        self.belief = 0.0
-
-    def update_belief(self, gaze, gesture):
-        """
-        Updates belief state based on multi-modal evidence:
-        - Looking + Reaching: Strong positive signal (Ready for handover)
-        - Looking only: Moderate signal (Nurse needs supplies on standby)
-        - Focused forward: Negative signal (Nurse is busy mid-task, back off)
-        """
-        if gaze == "LOOKING_ROBOT" and gesture == "HAND_REACHING":
-            # Cap at 1.0 (Full handover readiness)
-            self.belief = min(1.0, self.belief + 0.25)
-        elif gaze == "LOOKING_ROBOT" and gesture == "HAND_IDLE":
-            # Cap at 0.55 so gaze ALONE can never trigger handover (> 0.70)
-            # It cleanly holds inside the staging band [0.30, 0.65]
-            if self.belief < 0.55:
-                self.belief = min(0.55, self.belief + 0.15)
-            elif self.belief > 0.55:
-                self.belief = max(0.55, self.belief - 0.10)
-        elif gaze == "FOCUSED_FORWARD":
-            # Nurse returned attention to wound dressing -> safety backoff
-            self.belief = max(0.0, self.belief - 0.20)
-        elif gaze == "LOOKING_AWAY":
-            self.belief = max(0.0, self.belief - 0.15)
-
-    def decide_action(self):
-        """
-        Policy mapping belief levels and hand signals to discrete robot targets:
-        - Handover (> 0.70): Requires explicit hand reach
-        - Standby / Staging (0.30 - 0.70): Looked at robot without reaching
-        - Idle Bay (< 0.30): Nurse is focused forward on the task
-        """
-        # 1. Full Handover: High confidence (requires hand reach)
-        if self.belief > 0.70:
-            if self.state == "STAGING_AREA":
-                self.state = "AT_NURSE"
-                return "COMPLETE_HANDOVER"
-            elif self.state == "IDLE_BAY":
-                self.state = "STAGING_AREA"
-                return "ADVANCE_TO_STAGING"
-            return "HOLD_AT_NURSE"
-
-        # 2. Standby / Staging: Nurse looked over, but hasn't reached yet
-        elif 0.30 <= self.belief <= 0.70:
-            if self.state == "IDLE_BAY":
-                self.state = "STAGING_AREA"
-                return "ADVANCE_TO_STAGING"
-            elif self.state == "AT_NURSE":
-                # Abort back to staging if hand was lowered
-                self.state = "STAGING_AREA"
-                return "ABORT_TO_STAGING"
-            else:
-                self.state = "STAGING_AREA"
-                return "HOLD_AT_STAGING"
-
-        # 3. Mid-task / Disruption prevention: Clear workspace
-        else:
-            if self.state in ["AT_NURSE", "STAGING_AREA"]:
-                self.state = "IDLE_BAY"
-                return "RETURN_TO_BAY"
-            return "STANDBY_AT_BAY"
 
 # ==========================================
 # 4. MAIN LOOP & VISUALIZATION (ACT LAYER)
