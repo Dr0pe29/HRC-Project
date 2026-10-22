@@ -94,34 +94,66 @@ class HospitalGridWorld:
 face_mesh = mp_face_mesh.FaceMesh(max_num_faces=1, refine_landmarks=True)
 hands = mp_hands.Hands(max_num_hands=1)
 
-def estimate_gaze_direction(landmarks, w):
-    """Checks iris offset relative to eye width."""
+def estimate_gaze_direction(landmarks, w=None):
+
     try:
-        iris_x = landmarks.landmark[468].x * w
-        inner_x = landmarks.landmark[133].x * w
-        outer_x = landmarks.landmark[33].x * w
-        eye_w = abs(inner_x - outer_x)
-        if eye_w == 0:
+        # Requires mp_face_mesh.FaceMesh(refine_landmarks=True)
+        # Right Eye: inner=133, outer=33, iris=468
+        # Left Eye:  inner=362, outer=263, iris=473
+        r_iris = landmarks.landmark[468].x
+        r_inner = landmarks.landmark[133].x
+        r_outer = landmarks.landmark[33].x
+        r_w = abs(r_inner - r_outer)
+
+        l_iris = landmarks.landmark[473].x
+        l_inner = landmarks.landmark[362].x
+        l_outer = landmarks.landmark[263].x
+        l_w = abs(l_inner - l_outer)
+
+        if r_w == 0 or l_w == 0:
             return "FOCUSED_FORWARD"
-        ratio = (iris_x - min(inner_x, outer_x)) / eye_w
-        # Iris centered in the camera frame => Looking straight at the robot
-        if 0.40 <= ratio <= 0.60:
+
+        r_ratio = (r_iris - min(r_inner, r_outer)) / r_w
+        l_ratio = (l_iris - min(l_inner, l_outer)) / l_w
+        avg_ratio = (r_ratio + l_ratio) / 2.0
+
+        # Looking straight ahead (camera) falls within middle 20%
+        if 0.38 <= avg_ratio <= 0.62:
             return "LOOKING_ROBOT"
-        # Iris deflected to the side/down => Looking away / working on the patient
-        else:
-            return "FOCUSED_FORWARD"
-    except IndexError:
         return "FOCUSED_FORWARD"
 
-def estimate_hand_gesture(landmarks):
-    """Detects open forward reaching hand."""
-    wrist = landmarks.landmark[0]
-    middle_tip = landmarks.landmark[12]
-    index_tip = landmarks.landmark[8]
-    if middle_tip.y < landmarks.landmark[9].y and index_tip.y < landmarks.landmark[5].y:
-        return "HAND_REACHING"
-    return "HAND_IDLE"
+    except (IndexError, AttributeError):
+        return "FOCUSED_FORWARD"
 
+
+def is_finger_open(landmarks, tip_idx, knuckle_idx, wrist_idx=0):
+    wrist = np.array([landmarks.landmark[wrist_idx].x, landmarks.landmark[wrist_idx].y])
+    knuckle = np.array([landmarks.landmark[knuckle_idx].x, landmarks.landmark[knuckle_idx].y])
+    tip = np.array([landmarks.landmark[tip_idx].x, landmarks.landmark[tip_idx].y])
+
+    dist_tip = np.linalg.norm(tip - wrist)
+    dist_knuckle = np.linalg.norm(knuckle - wrist)
+    return dist_tip > (dist_knuckle * 1.15)
+
+def estimate_hand_gesture(landmarks):
+    try:
+        # Index: Tip 8, PIP 6 | Middle: Tip 12, PIP 10 | Ring: Tip 16, PIP 14
+        index_open = is_finger_open(landmarks, 8, 6)
+        middle_open = is_finger_open(landmarks, 12, 10)
+        ring_open = is_finger_open(landmarks, 16, 14)
+
+        # Depth to make it more robust to hand orientation
+        wrist_z = landmarks.landmark[0].z
+        middle_z = landmarks.landmark[12].z
+        reaching_forward = (middle_z - wrist_z) < 0.05  # Negative Z is closer to camera
+
+        # Hand is open and extended outward
+        if (index_open and middle_open and ring_open) and reaching_forward:
+            return "HAND_REACHING"
+        return "HAND_IDLE"
+
+    except (IndexError, AttributeError):
+        return "HAND_IDLE"
 
 
 # ==========================================

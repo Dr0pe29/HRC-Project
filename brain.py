@@ -105,26 +105,30 @@ def choose_action(belief, pos):
 
 
 class RobotNurseBrain:
-    def __init__(self):
+    def __init__(self, initial_supplies=3):
         self.start_time = time.time()
         self.last_step = 0.0
         
-        self.pos = 0 
+        self.pos = 0  # 0: IDLE_BAY, 1: STAGING_AREA, 2: AT_NURSE
         self.state = positions[self.pos]
         self.belief = 0.0
         self.says = "Waiting in idle bay"
         
-        # Handover state
-        self.delivered = False
+        # Multi-item inventory & handover tracking
+        self.supplies_count = initial_supplies
+        self.item_delivered = False
         self.handover_start_time = None
-        self.HANDOVER_DURATION = 1.5 
+        self.HANDOVER_DURATION = 1.5  # Transfer duration in seconds
+        self.max_supplies = initial_supplies
+        self.restocking_start_time = None
+        self.RESTOCK_DURATION = 3.0
         
         self.recent_reaches = []
         self.recent_gazes = []
         self.obs_list = [0]
 
         with open("log.txt", "w") as f:
-            f.write("time,mode,looking,gesture,obs,P_HighFocus,P_TaskTransition,P_AwaitingHandover,robot_position,robot_says\n")
+            f.write("time,mode,looking,gesture,obs,P_HighFocus,P_TaskTransition,P_AwaitingHandover,robot_position,supplies_left,robot_says\n")
 
     def update_belief(self, gaze, gesture):
         now = time.time() - self.start_time
@@ -148,39 +152,71 @@ class RobotNurseBrain:
         obs = obs_index(looking_word, gesture_word)
         self.obs_list.append(obs)
 
+        # Update HMM belief
         belief = get_belief(self.obs_list)
-        self.belief = belief[2] 
-        nurse_state = np.argmax(belief)
+        self.belief = belief[2]
+        nurse_state = np.argmax(belief)  # 0: HighFocus, 1: TaskTransition, 2: AwaitingHandover
 
-        # New handover logic
+
+        # ------------------------ HANDOVER LOGIC ------------------------
+        # THIS SHOULD BE TURNED INTO THE HMM AND MDP LOGIC, BUT FOR NOW IT'S A SIMPLE RULE-BASED SYSTEM
         
-        # 1. Reset handover state if the nurse is no longer in AwaitingHandover
-        if self.delivered and nurse_state == 0:
-            self.delivered = False
+        # OUT OF SUPPLIES: Must return to Bay to restock
+        if self.supplies_count == 0:
+            self.pos = 0  # Force to IDLE_BAY
+            self.state = positions[self.pos]
             self.handover_start_time = None
 
-        # 2. after handover is complete, the robot should back off to the staging area
-        if self.delivered:
+            if self.restocking_start_time is None:
+                self.restocking_start_time = now
+                self.says = "Tray empty: restocking supplies in Bay..."
+            elif now - self.restocking_start_time >= self.RESTOCK_DURATION:
+                # Restocking finished: refill tray and clear timer
+                self.supplies_count = self.max_supplies
+                self.restocking_start_time = None
+                self.item_delivered = False
+                self.says = f"Supplies restocked ({self.max_supplies} items ready)! Waiting in idle bay"
+            else:
+                self.says = f"Restocking supplies in Bay ({int(self.RESTOCK_DURATION - (now - self.restocking_start_time))}s left)..."
+
+            # Log step while restocking and exit early
+            with open("log.txt", "a") as f:
+                f.write(f"{now:.2f},{MODE},{looking_word},{gesture_word},{obs},"
+                        f"{belief[0]:.3f},{belief[1]:.3f},{belief[2]:.3f},"
+                        f"{self.state},{self.supplies_count},{self.says}\n")
+            return
+
+        # If the nurse either looks down OR simply retracts their hand, reset handover timer.
+        if self.item_delivered and (nurse_state == 0 or gesture_word == "none"):
+            self.item_delivered = False
+            self.handover_start_time = None
+
+        # After handing over, hold at STAGING_AREA until the nurse retracts their hand
+        if self.item_delivered:
             self.pos = 1  # STAGING_AREA
             self.handover_start_time = None
-            says = "Item delivered! Standing by at staging threshold"
+            says = f"Item delivered! Standing by at staging ({self.supplies_count} items remaining)"
 
-        # 3. Execute handover if the robot is at the nurse and the nurse is in AwaitingHandover state
+        #HANDOVER EXECUTION:
         elif self.pos == 2 and nurse_state == 2:
             if self.handover_start_time is None:
                 self.handover_start_time = now
-                says = "Executing handover: transferring supplies"
+                says = f"Transferring item #{4 - self.supplies_count} to nurse"
             elif now - self.handover_start_time >= self.HANDOVER_DURATION:
-                # Handover complete
-                self.delivered = True
-                self.pos = 1 
-                says = "Handover complete! Backing off to staging"
+                # Delivery complete
+                self.supplies_count -= 1
+                self.item_delivered = True
+                self.pos = 1
+                self.handover_start_time = None
+                says = f"Handover #{4 - (self.supplies_count + 1)} complete! Backing off to staging"
             else:
                 says = "Handing over supplies to nurse"
 
-        # 4. Otherwise, decide action based on belief and position
+        # -------------------- END OF HANDOVER --------------------
+
+        # Otherwise, decide action based on belief and position
         else:
-            self.handover_start_time = None
+            self.handover_start_time = None  # Reset timer on any abort/retreat
             action = choose_action(belief, self.pos)
             new_pos = move(self.pos, action)
 
@@ -188,7 +224,7 @@ class RobotNurseBrain:
                 if self.pos == 0:
                     says = "Waiting in idle bay"
                 elif self.pos == 1:
-                    says = "Standing by at staging threshold"
+                    says = f"Standing by at staging threshold ({self.supplies_count} items ready)"
                 else:
                     says = "Waiting at nurse"
             elif new_pos > self.pos:
@@ -207,10 +243,11 @@ class RobotNurseBrain:
         self.state = positions[self.pos]
         self.says = says
 
+        # Log entry (Gate G2)
         with open("log.txt", "a") as f:
             f.write(f"{now:.2f},{MODE},{looking_word},{gesture_word},{obs},"
                     f"{belief[0]:.3f},{belief[1]:.3f},{belief[2]:.3f},"
-                    f"{self.state},{self.says}\n")
+                    f"{self.state},{self.supplies_count},{self.says}\n")
 
     def decide_action(self):
         return self.says
