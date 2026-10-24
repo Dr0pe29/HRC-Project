@@ -142,7 +142,7 @@ class RobotNurseBrain:
 
         # Smooth detection over recent frames to avoid flickering
         is_looking = sum(self.recent_gazes) > (len(self.recent_gazes) * 0.5)
-        is_reaching = sum(self.recent_reaches) > (len(self.recent_reaches) * 0.4)
+        is_reaching = sum(self.recent_reaches) > (len(self.recent_reaches) * 0.5)
         self.recent_gazes = []
         self.recent_reaches = []
 
@@ -159,7 +159,7 @@ class RobotNurseBrain:
 
 
         # ------------------------ HANDOVER LOGIC ------------------------
-        # THIS SHOULD BE TURNED INTO THE HMM AND MDP LOGIC, BUT FOR NOW IT'S A SIMPLE RULE-BASED SYSTEM
+        #MAYBE THIS SHOULD BE TURNED INTO THE HMM AND MDP LOGIC, BUT FOR NOW IT'S A SIMPLE RULE-BASED SYSTEM
         
         # OUT OF SUPPLIES: Must return to Bay to restock
         if self.supplies_count == 0:
