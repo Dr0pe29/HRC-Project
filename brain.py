@@ -127,8 +127,35 @@ class RobotNurseBrain:
         self.recent_gazes = []
         self.obs_list = [0]
 
+        # Metrics (reset every restock cycle)
+        self.cycle_id = 0
+        self._reset_metrics(0.0)
+
         with open("log.txt", "w") as f:
             f.write("time,mode,looking,gesture,obs,P_HighFocus,P_TaskTransition,P_AwaitingHandover,robot_position,supplies_left,robot_says\n")
+
+        # ------------------------ METRICS ------------------------
+    def _reset_metrics(self, now):
+        self.cycle_start = now        # TCT clock
+        self.need_start = None        # when nurse first signalled need (reach)
+        self.t_waits = []             # Handover Idle Latency per item
+
+    def _on_handover_complete(self, now):
+        if self.need_start is not None:
+            self.t_waits.append(now - self.need_start)
+        self.need_start = None
+        if self.supplies_count == 0:
+            self._write_report(now)
+
+    def _write_report(self, now):
+        self.cycle_id += 1
+        mean = lambda v: f"{sum(v) / len(v):.2f}s" if v else "N/A"
+        fmt = lambda v: ", ".join(f"{x:.2f}" for x in v) if v else "none"
+        with open(f"metrics_cycle{self.cycle_id}.txt", "w") as f:
+            f.write(f"=== Metrics report: cycle {self.cycle_id} (condition/mode: {MODE}) ===\n")
+            f.write(f"Total Task Completion Time (TCT): {now - self.cycle_start:.2f}s\n")
+            f.write(f"Handover Idle Latency (T_wait) per item [s]: {fmt(self.t_waits)}\n")
+            f.write(f"  Mean T_wait: {mean(self.t_waits)}\n")
 
     def update_belief(self, gaze, gesture):
         now = time.time() - self.start_time
@@ -175,6 +202,7 @@ class RobotNurseBrain:
                 self.supplies_count = self.max_supplies
                 self.restocking_start_time = None
                 self.item_delivered = False
+                self._reset_metrics(now) 
                 self.says = f"Supplies restocked ({self.max_supplies} items ready)! Waiting in idle bay"
             else:
                 self.says = f"Restocking supplies in Bay ({int(self.RESTOCK_DURATION - (now - self.restocking_start_time))}s left)..."
@@ -185,6 +213,12 @@ class RobotNurseBrain:
                         f"{belief[0]:.3f},{belief[1]:.3f},{belief[2]:.3f},"
                         f"{self.state},{self.supplies_count},{self.says}\n")
             return
+
+         # Metrics: need onset (first reach)
+        if is_reaching and self.need_start is None and not self.item_delivered:
+            self.need_start = now
+        if nurse_state == 0:
+            self.need_start = None            # nurse went back to focus: need withdrawn
 
         # If the nurse either looks down OR simply retracts their hand, reset handover timer.
         if self.item_delivered and (nurse_state == 0 or gesture_word == "none"):
@@ -208,6 +242,7 @@ class RobotNurseBrain:
                 self.item_delivered = True
                 self.pos = 1
                 self.handover_start_time = None
+                self._on_handover_complete(now)
                 says = f"Handover #{4 - (self.supplies_count + 1)} complete! Backing off to staging"
             else:
                 says = "Handing over supplies to nurse"

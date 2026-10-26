@@ -1,0 +1,4 @@
+=== Metrics report: cycle 1 (condition/mode: proactive) ===
+Total Task Completion Time (TCT): 56.07s
+Handover Idle Latency (T_wait) per item [s]: 2.08, 2.09, 2.05
+  Mean T_wait: 2.07s

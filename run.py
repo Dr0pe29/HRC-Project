@@ -38,7 +38,7 @@ class HospitalGridWorld:
         self.robot_pos = list(self.locations["IDLE_BAY"])
         self.nurse_pos = (3, 8)
 
-    def step_towards(self, target_state_name, speed=0.15):
+    def step_towards(self, target_state_name, speed=0.06):
         """Moves robot gradually towards the target waypoint on the grid."""
         target_r, target_c = self.locations[target_state_name]
         self.robot_pos[0] += (target_r - self.robot_pos[0]) * speed
@@ -210,7 +210,7 @@ def main():
         step += 1
 
         # --- Act / Animate Grid ---
-        grid_env.step_towards(brain.state, speed=0.18)
+        grid_env.step_towards(brain.state, speed=0.06)
         grid_canvas = grid_env.render(brain.state, brain.belief, action)
 
         if step % 15 == 0:

@@ -62,7 +62,7 @@ def run_synthetic_simulation(grid_env_class):
         step += 1
 
         # --- Act Layer (2D Grid Top-Down Animation) ---
-        grid_env.step_towards(brain.state, speed=0.18)
+        grid_env.step_towards(brain.state, speed=0.06)
         grid_canvas = grid_env.render(brain.state, brain.belief, action)
 
         if step % 20 == 0:
