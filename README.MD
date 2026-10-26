@@ -2,6 +2,13 @@
 
 A Human-Robot Collaboration (HRC) simulation featuring real-time non-verbal sensing (gaze and hand tracking via MediaPipe) paired with an intent-aware decision pipeline (Hidden Markov Model and 1-step Expected Utility Policy). The robot proactively stages and delivers sterile wound care supplies without disrupting clinical focus.
 
+The system supports two experimental conditions:
+ 
+| Condition | Mode | Robot trigger | Home position |
+| :--- | :--- | :--- | :--- |
+| **A: Reactive** | `--reactive` | Nurse presses the **spacebar** (button). The HMM is ignored. | `IDLE_BAY` |
+| **B: Proactive** | default | HMM belief over gaze and gesture (anticipates the need). | `STAGING_AREA` |
+
 ---
 
 ## 1. Setup
@@ -35,7 +42,8 @@ pip install -r requirements.txt
 Ensure your virtual environment is active, then run:
 
 ```bash
-python run.py
+python run.py              # Condition B: proactive (HMM-driven)
+python run.py --reactive   # Condition A: reactive (button-driven)
 ```
 
 * **With a Webcam:** The system launches the live dual-pane view: webcam skeletal tracking on the left and the 2D top-down hospital ward simulation on the right.

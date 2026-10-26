@@ -2,8 +2,10 @@
 import time
 import numpy as np
 from hmmlearn import hmm
+import sys
 
-MODE = "proactive"
+MODE = "reactive" if "--reactive" in sys.argv else "proactive"
+HOME_POS = 1 if MODE == "proactive" else 0
 DEBUG = False
 STEP_TIME = 0.5 #CHanged to get faster updates
 
@@ -88,7 +90,15 @@ reward_table = np.array([
 ])
 motion_cost = 0.3 #Reduced to make it more responsive
 
-def choose_action(belief, pos):
+def reactive_action(requested, pos):
+    """Condition A: stay home until the button is pressed, deliver, then return home."""
+    if requested:
+        return 1 if pos < 2 else 0       # closer, or stay if already at nurse
+    return 2 if pos > 0 else 0           # otherwise back toward the bay
+
+def choose_action(belief, pos, requested=False):
+    if MODE == "reactive":
+        return reactive_action(requested, pos)
     best_action = 0
     best_score = -1000
     for action in range(3):
@@ -108,6 +118,7 @@ class RobotNurseBrain:
     def __init__(self, initial_supplies=3):
         self.start_time = time.time()
         self.last_step = 0.0
+        self.button_requested = False
         
         self.pos = 0  # 0: IDLE_BAY, 1: STAGING_AREA, 2: AT_NURSE
         self.state = positions[self.pos]
@@ -146,6 +157,7 @@ class RobotNurseBrain:
         self.need_start = None
         if self.supplies_count == 0:
             self._write_report(now)
+        self.button_requested = False
 
     def _write_report(self, now):
         self.cycle_id += 1
@@ -156,6 +168,13 @@ class RobotNurseBrain:
             f.write(f"Total Task Completion Time (TCT): {now - self.cycle_start:.2f}s\n")
             f.write(f"Handover Idle Latency (T_wait) per item [s]: {fmt(self.t_waits)}\n")
             f.write(f"  Mean T_wait: {mean(self.t_waits)}\n")
+
+    def press_button(self):
+        """Reactive mode: nurse requests an item. Latched until the handover completes."""
+        if MODE != "reactive" or self.button_requested or self.supplies_count == 0:
+            return
+        self.button_requested = True
+        self.need_start = time.time() - self.start_time   # T_wait clock starts at the press
 
     def update_belief(self, gaze, gesture):
         now = time.time() - self.start_time
@@ -184,10 +203,8 @@ class RobotNurseBrain:
         self.belief = belief[2]
         nurse_state = np.argmax(belief)  # 0: HighFocus, 1: TaskTransition, 2: AwaitingHandover
 
-
         # ------------------------ HANDOVER LOGIC ------------------------
-        #MAYBE THIS SHOULD BE TURNED INTO THE HMM AND MDP LOGIC, BUT FOR NOW IT'S A SIMPLE RULE-BASED SYSTEM
-        
+
         # OUT OF SUPPLIES: Must return to Bay to restock
         if self.supplies_count == 0:
             self.pos = 0  # Force to IDLE_BAY
@@ -202,7 +219,7 @@ class RobotNurseBrain:
                 self.supplies_count = self.max_supplies
                 self.restocking_start_time = None
                 self.item_delivered = False
-                self._reset_metrics(now) 
+                self._reset_metrics(now)                      
                 self.says = f"Supplies restocked ({self.max_supplies} items ready)! Waiting in idle bay"
             else:
                 self.says = f"Restocking supplies in Bay ({int(self.RESTOCK_DURATION - (now - self.restocking_start_time))}s left)..."
@@ -214,25 +231,30 @@ class RobotNurseBrain:
                         f"{self.state},{self.supplies_count},{self.says}\n")
             return
 
-         # Metrics: need onset (first reach)
-        if is_reaching and self.need_start is None and not self.item_delivered:
-            self.need_start = now
-        if nurse_state == 0:
-            self.need_start = None            # nurse went back to focus: need withdrawn
+        # Metrics: need onset (first reach). In reactive mode the button press starts this clock.
+        if MODE != "reactive":                                
+            if is_reaching and self.need_start is None and not self.item_delivered:
+                self.need_start = now
+            if nurse_state == 0:
+                self.need_start = None                        # nurse went back to focus: need withdrawn
 
-        # If the nurse either looks down OR simply retracts their hand, reset handover timer.
-        if self.item_delivered and (nurse_state == 0 or gesture_word == "none"):
+        # If the nurse looks down OR retracts their hand, reset handover timer.
+        # In reactive mode, return home right after delivery regardless of camera input.
+        if self.item_delivered and (MODE == "reactive" or nurse_state == 0 or gesture_word == "none"):  
             self.item_delivered = False
             self.handover_start_time = None
 
-        # After handing over, hold at STAGING_AREA until the nurse retracts their hand
-        if self.item_delivered:
-            self.pos = 1  # STAGING_AREA
-            self.handover_start_time = None
-            says = f"Item delivered! Standing by at staging ({self.supplies_count} items remaining)"
+        # What triggers a handover: button (reactive) or HMM AwaitingHandover (proactive)
+        wants_item = self.button_requested if MODE == "reactive" else nurse_state == 2  
 
-        #HANDOVER EXECUTION:
-        elif self.pos == 2 and nurse_state == 2:
+        # After handing over, hold at home position until the nurse retracts their hand
+        if self.item_delivered:
+            self.pos = HOME_POS                              
+            self.handover_start_time = None
+            says = f"Item delivered! Standing by ({self.supplies_count} items remaining)"
+
+        # HANDOVER EXECUTION:
+        elif self.pos == 2 and wants_item:                    
             if self.handover_start_time is None:
                 self.handover_start_time = now
                 says = f"Transferring item #{4 - self.supplies_count} to nurse"
@@ -240,10 +262,10 @@ class RobotNurseBrain:
                 # Delivery complete
                 self.supplies_count -= 1
                 self.item_delivered = True
-                self.pos = 1
+                self.pos = HOME_POS                           
                 self.handover_start_time = None
-                self._on_handover_complete(now)
-                says = f"Handover #{4 - (self.supplies_count + 1)} complete! Backing off to staging"
+                self._on_handover_complete(now)               
+                says = f"Handover #{4 - (self.supplies_count + 1)} complete! Backing off"
             else:
                 says = "Handing over supplies to nurse"
 
@@ -252,7 +274,7 @@ class RobotNurseBrain:
         # Otherwise, decide action based on belief and position
         else:
             self.handover_start_time = None  # Reset timer on any abort/retreat
-            action = choose_action(belief, self.pos)
+            action = choose_action(belief, self.pos, self.button_requested)   
             new_pos = move(self.pos, action)
 
             if new_pos == self.pos:
