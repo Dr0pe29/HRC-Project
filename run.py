@@ -1,12 +1,21 @@
+import sys
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="google.protobuf")
 
 import cv2
 import numpy as np
-import mediapipe.python.solutions.face_mesh as mp_face_mesh
-import mediapipe.python.solutions.hands as mp_hands
-import mediapipe.python.solutions.drawing_utils as mp_drawing
+
+# Conditional MediaPipe import
+try:
+    import mediapipe.python.solutions.face_mesh as mp_face_mesh
+    import mediapipe.python.solutions.hands as mp_hands
+    import mediapipe.python.solutions.drawing_utils as mp_drawing
+    HAS_MEDIAPIPE = True
+except ImportError:
+    HAS_MEDIAPIPE = False
+
 from brain import RobotNurseBrain
+from simulation import run_synthetic_simulation
 
 # ==========================================
 # 1. 2D GRID ENVIRONMENT
@@ -29,11 +38,9 @@ class HospitalGridWorld:
         self.robot_pos = list(self.locations["IDLE_BAY"])
         self.nurse_pos = (3, 8)
 
-    def step_towards(self, target_state_name, speed=0.15):
+    def step_towards(self, target_state_name, speed=0.06):
         """Moves robot gradually towards the target waypoint on the grid."""
         target_r, target_c = self.locations[target_state_name]
-        
-        # Smooth interpolation
         self.robot_pos[0] += (target_r - self.robot_pos[0]) * speed
         self.robot_pos[1] += (target_c - self.robot_pos[1]) * speed
 
@@ -91,15 +98,12 @@ class HospitalGridWorld:
 # ==========================================
 # 2. SENSING (GAZE & GESTURE)
 # ==========================================
-face_mesh = mp_face_mesh.FaceMesh(max_num_faces=1, refine_landmarks=True)
-hands = mp_hands.Hands(max_num_hands=1)
+if HAS_MEDIAPIPE:
+    face_mesh = mp_face_mesh.FaceMesh(max_num_faces=1, refine_landmarks=True)
+    hands = mp_hands.Hands(max_num_hands=1)
 
 def estimate_gaze_direction(landmarks, w=None):
-
     try:
-        # Requires mp_face_mesh.FaceMesh(refine_landmarks=True)
-        # Right Eye: inner=133, outer=33, iris=468
-        # Left Eye:  inner=362, outer=263, iris=473
         r_iris = landmarks.landmark[468].x
         r_inner = landmarks.landmark[133].x
         r_outer = landmarks.landmark[33].x
@@ -117,55 +121,66 @@ def estimate_gaze_direction(landmarks, w=None):
         l_ratio = (l_iris - min(l_inner, l_outer)) / l_w
         avg_ratio = (r_ratio + l_ratio) / 2.0
 
-        # Looking straight ahead (camera) falls within middle 20%
         if 0.38 <= avg_ratio <= 0.62:
             return "LOOKING_ROBOT"
         return "FOCUSED_FORWARD"
-
     except (IndexError, AttributeError):
         return "FOCUSED_FORWARD"
-
 
 def is_finger_open(landmarks, tip_idx, knuckle_idx, wrist_idx=0):
     wrist = np.array([landmarks.landmark[wrist_idx].x, landmarks.landmark[wrist_idx].y])
     knuckle = np.array([landmarks.landmark[knuckle_idx].x, landmarks.landmark[knuckle_idx].y])
     tip = np.array([landmarks.landmark[tip_idx].x, landmarks.landmark[tip_idx].y])
-
-    dist_tip = np.linalg.norm(tip - wrist)
-    dist_knuckle = np.linalg.norm(knuckle - wrist)
-    return dist_tip > (dist_knuckle * 1.15)
+    return np.linalg.norm(tip - wrist) > (np.linalg.norm(knuckle - wrist) * 1.15)
 
 def estimate_hand_gesture(landmarks):
     try:
-        # Index: Tip 8, PIP 6 | Middle: Tip 12, PIP 10 | Ring: Tip 16, PIP 14
         index_open = is_finger_open(landmarks, 8, 6)
         middle_open = is_finger_open(landmarks, 12, 10)
         ring_open = is_finger_open(landmarks, 16, 14)
 
-        # Depth to make it more robust to hand orientation
         wrist_z = landmarks.landmark[0].z
         middle_z = landmarks.landmark[12].z
-        reaching_forward = (middle_z - wrist_z) < 0.05  # Negative Z is closer to camera
+        reaching_forward = (middle_z - wrist_z) < 0.05
 
-        # Hand is open and extended outward
         if (index_open and middle_open and ring_open) and reaching_forward:
             return "HAND_REACHING"
         return "HAND_IDLE"
-
     except (IndexError, AttributeError):
         return "HAND_IDLE"
 
 
 # ==========================================
-# 4. MAIN LOOP & VISUALIZATION (ACT LAYER)
+# 3. MAIN RUNNER (ROBUST GATE G1/G2 ENTRY)
 # ==========================================
 def main():
-    cap = cv2.VideoCapture(0)
+    # Allow manual override via command line (e.g., python run.py --mock)
+    force_mock = "--mock" in sys.argv
+
+    cap = None
+    webcam_available = False
+
+    if HAS_MEDIAPIPE and not force_mock:
+        cap = cv2.VideoCapture(0)
+        if cap is not None and cap.isOpened():
+            ret, test_frame = cap.read()
+            if ret and test_frame is not None:
+                webcam_available = True
+
+    # If no camera is available or --mock is specified, trigger fallback
+    if not webcam_available:
+        if cap is not None:
+            cap.release()
+        print("[INFO] Camera not detected (or --mock passed). Launching fallback simulation...")
+        run_synthetic_simulation(HospitalGridWorld)
+        return
+
+    # Real-time computer vision mode
     grid_env = HospitalGridWorld()
     brain = RobotNurseBrain()
     step = 0
 
-    print("Running 2D Grid Visualization. Press 'q' to quit.")
+    print("[INFO] Webcam initialized. Running Live 2D Grid Visualization. Press 'q' to quit.")
 
     while cap.isOpened():
         ret, frame = cap.read()
@@ -195,10 +210,9 @@ def main():
         step += 1
 
         # --- Act / Animate Grid ---
-        grid_env.step_towards(brain.state, speed=0.18)
+        grid_env.step_towards(brain.state, speed=0.06)
         grid_canvas = grid_env.render(brain.state, brain.belief, action)
 
-        # Logging for Gate G2
         if step % 15 == 0:
             print(f"[Step {step:04d}] Belief: {brain.belief:.2f} | Robot At: {brain.state:<12} | Action: {action}")
 
@@ -209,7 +223,6 @@ def main():
         cv2.putText(frame, f"Readiness: {brain.belief * 100:.0f}%", (18, 85), 
                     cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 2)
 
-        # Match heights and stack horizontally
         target_h = 390
         frame_resized = cv2.resize(frame, (int(w * (target_h / h)), target_h))
         grid_resized = cv2.resize(grid_canvas, (grid_env.width, target_h))
